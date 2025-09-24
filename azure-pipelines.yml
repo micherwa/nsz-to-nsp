@@ -1,0 +1,53 @@
+# NSZ Azure pipeline
+
+trigger:
+- master
+
+pool:
+  name: default
+  #vmImage: 'windows-latest'
+strategy:
+  maxParallel: 4
+  matrix:
+    Python360:
+      python.version: '3.6.0'
+    Python368:
+      python.version: '3.6.8'
+    Python376:
+      python.version: '3.7.6'
+    Python383:
+      python.version: '3.8.3'
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '$(python.version)'
+  displayName: 'Use Python $(python.version)'
+
+- script: |
+    python -m pip install --upgrade pip
+    python -m pip install -r requirements.txt
+  displayName: 'Install dependencies'
+  
+- task: CmdLine@2
+  inputs:
+    script: python nsz.py -D -V --keep -w -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsp_from_solid_out C:\Users\Azure\.switch\tests\nsz_solid
+    failOnStderr: true
+  displayName: 'Test NSZ solid decompression'
+  
+- task: CmdLine@2
+  inputs:
+    script: python nsz.py -D -V --keep -w -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsp_from_block_out C:\Users\Azure\.switch\tests\nsz_block
+    failOnStderr: true
+  displayName: 'Test NSZ block decompression'
+  
+- task: CmdLine@2
+  inputs:
+    script: python nsz.py -C -V --keep -w -p -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsz_solid_out C:\Users\Azure\.switch\tests\nsp
+    failOnStderr: true
+  displayName: 'Test NSP solid compression'
+  
+- task: CmdLine@2
+  inputs:
+    script: python nsz.py -C -B -V --keep -w -p -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsz_block_out C:\Users\Azure\.switch\tests\nsp
+    failOnStderr: true
+  displayName: 'Test NSP block compression'
