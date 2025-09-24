@@ -18,6 +18,11 @@
 
 基于 [nicoboss/nsz](https://github.com/nicoboss/nsz) 开发的增强版本，专为批量转换Nintendo Switch的NSZ压缩文件而设计。提供了完整的批量处理工具链，支持文件验证、目录结构保持等高级功能。
 
+使用本工具前，请确保已经下载了龙神模拟器Ryujinx，并在mac的用户目录下创建了.switch文件夹，相关的key文件已存在。
+
+
+模拟器及key文件的安装，可参考：[龙神模拟器（Switch模拟器）手把手教程](https://www.bilibili.com/video/BV1dw41137zs/?spm_id_from=333.337.search-card.all.click&vd_source=f1e502a681892ecca73613c0df4cb6c2)
+
 ## ✨ 功能特性
 
 | 功能 | 描述 | 状态 |
