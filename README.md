@@ -49,13 +49,13 @@ source venv/bin/activate    # macOS/Linux
 venv\Scripts\activate       # Windows
 
 # 3. 安装依赖包
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ### 基础使用
 
 ```bash
-# 1. 将NSZ文件放入 input/ 文件夹
+# 1. 将包含NSZ的文件或者文件夹，放入 input/ 文件夹
 
 # 2. 执行批量转换（推荐）
 python3 batch_convert.py --auto --quick-verify --fix-padding
