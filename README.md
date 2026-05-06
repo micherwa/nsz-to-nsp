@@ -4,6 +4,7 @@
 
 **高效、可靠的Nintendo Switch NSZ文件批量转换工具**
 
+[![tests](https://github.com/micherwa/nsz-to-nsp/actions/workflows/test.yml/badge.svg)](https://github.com/micherwa/nsz-to-nsp/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/Python-3.6+-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
