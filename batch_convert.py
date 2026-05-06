@@ -33,9 +33,15 @@ def main():
     
     parser = argparse.ArgumentParser(description='批量NSZ转NSP转换工具')
     parser.add_argument('--auto', '-y', action='store_true', help='自动确认，不询问用户')
-    parser.add_argument('--verify', action='store_true', help='启用完整文件验证（推荐用于重要文件）')
-    parser.add_argument('--quick-verify', action='store_true', help='启用快速验证（推荐，验证NCA哈希）')
-    parser.add_argument('--fix-padding', action='store_true', help='修复PFS0填充以提高兼容性')
+    parser.add_argument('--verify', action='store_true', help='启用完整文件验证（最慢但最严格，验证 NSP SHA256 与原 NSZ 对齐）')
+    # 默认开启 quick-verify + fix-padding：
+    # - quick-verify 让 NCA hash 不一致时直接 [CORRUPTED] 落到日志，方便定位坏包
+    # - fix-padding 把 PFS0 header padding 拉到 nxdumptool / no-intro 标准，Ryujinx 兼容性最佳
+    parser.add_argument('--quick-verify', dest='quick_verify', action='store_true', default=True, help='启用快速验证（默认开启，验证NCA哈希）')
+    parser.add_argument('--no-quick-verify', dest='quick_verify', action='store_false', help='关闭快速验证')
+    parser.add_argument('--fix-padding', dest='fix_padding', action='store_true', default=True, help='修复PFS0填充以提高模拟器兼容性（默认开启）')
+    parser.add_argument('--no-fix-padding', dest='fix_padding', action='store_false', help='关闭PFS0填充修复（不推荐）')
+    parser.add_argument('--verbose', '-v', action='store_true', help='转换成功时也打印 nsz.py 的完整日志')
     args = parser.parse_args()
     
     # 获取脚本所在目录
@@ -96,7 +102,18 @@ def main():
     
     success_count = 0
     failed_files = []
-    
+    suspicious_files = []  # 进程退出码 0，但日志里有 [CORRUPTED]/[MISSMATCH]/missing key 的"灰色"产物
+
+    # nsz.py 自身打日志时常用的失败/告警关键字
+    SUSPICIOUS_PATTERNS = (
+        '[CORRUPTED]',
+        '[MISMATCH]',
+        '[MISSMATCH]',  # 上游 typo，保留兼容
+        'missing from',
+        'crc32 missmatch',
+        'Failed to load default keys',
+    )
+
     for i, nsz_file in enumerate(nsz_files, 1):
         try:
             relative_path = nsz_file.relative_to(input_dir)
@@ -141,14 +158,26 @@ def main():
             
             # 执行转换命令
             result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-            
-            if result.returncode == 0:
+
+            combined_log = (result.stdout or '') + (result.stderr or '')
+            hits = [p for p in SUSPICIOUS_PATTERNS if p in combined_log]
+
+            if result.returncode == 0 and not hits:
                 print(f"  ✓ 转换成功")
+                if args.verbose and combined_log.strip():
+                    print(combined_log.rstrip())
                 success_count += 1
+            elif result.returncode == 0 and hits:
+                # 工具说成功，但日志里有 hash 不一致 / 缺 key 之类的硬伤
+                # 不能再当成功——这种 NSP 装到 Ryujinx 里大概率挂载失败或进游戏崩
+                print(f"  ⚠ 转换看似成功但日志里有可疑信号: {', '.join(hits)}")
+                print(combined_log.rstrip())
+                suspicious_files.append(str(relative_path))
             else:
-                print(f"  ✗ 转换失败")
-                if result.stderr:
-                    print(f"  错误信息: {result.stderr.strip()}")
+                print(f"  ✗ 转换失败 (exit={result.returncode})")
+                # 失败时把 stdout / stderr 都倒出来，nsz.py 的关键诊断（缺 key / corrupted / NCZSECTN 错）通常在 stdout
+                if combined_log.strip():
+                    print(combined_log.rstrip())
                 failed_files.append(str(relative_path))
                 
         except Exception as e:
@@ -164,7 +193,12 @@ def main():
         print("失败的文件:")
         for failed_file in failed_files:
             print(f"  - {failed_file}")
-    
+    if suspicious_files:
+        print(f"⚠ 可疑产物（退出码0但日志有 corrupted/missing key 等告警）: {len(suspicious_files)} 个")
+        print("   建议先别拷进 Ryujinx，对照上面输出排查 prod.keys / title.keys 或换源:")
+        for f in suspicious_files:
+            print(f"  - {f}")
+
     print(f"\n转换后的NSP文件已保存到: {output_dir}")
     print("=" * 60)
 

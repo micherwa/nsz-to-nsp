@@ -1,53 +1,103 @@
 # NSZ Azure pipeline
+#
+# 两个 job：
+#  - pytest_unit  ：本仓库新增。在公网 ubuntu agent 上跑 tests/ 下的纯单测，
+#                   覆盖本地针对 nsz/ 的两处补丁（FakeSection 漏算 / Pfs0Stream
+#                   getFirstFileOffset）。本 fork 的 CI 实际跑的就是这个 job。
+#
+#  - upstream_e2e ：上游 nicoboss/nsz 自带的 4 步 ROM 测试。依赖 self-hosted
+#                   Windows agent + 预先放在 C:\Users\Azure\.switch\tests\ 的
+#                   真实 NSP / NSZ 样本，普通 fork 跑不起来。这里保留是为了
+#                   diff 上游同步时能直观看到结构没动；将来切到自己的 self-hosted
+#                   agent 再启用 condition。
 
 trigger:
-- master
+  - main
+  - master
 
-pool:
-  name: default
-  #vmImage: 'windows-latest'
-strategy:
-  maxParallel: 4
-  matrix:
-    Python360:
-      python.version: '3.6.0'
-    Python368:
-      python.version: '3.6.8'
-    Python376:
-      python.version: '3.7.6'
-    Python383:
-      python.version: '3.8.3'
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '$(python.version)'
-  displayName: 'Use Python $(python.version)'
+stages:
+  - stage: unit_tests
+    displayName: "Pytest unit tests (本地补丁回归)"
+    jobs:
+      - job: pytest_unit
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          maxParallel: 3
+          matrix:
+            Python310:
+              python.version: '3.10'
+            Python311:
+              python.version: '3.11'
+            Python312:
+              python.version: '3.12'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(python.version)'
+            displayName: 'Use Python $(python.version)'
 
-- script: |
-    python -m pip install --upgrade pip
-    python -m pip install -r requirements.txt
-  displayName: 'Install dependencies'
-  
-- task: CmdLine@2
-  inputs:
-    script: python nsz.py -D -V --keep -w -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsp_from_solid_out C:\Users\Azure\.switch\tests\nsz_solid
-    failOnStderr: true
-  displayName: 'Test NSZ solid decompression'
-  
-- task: CmdLine@2
-  inputs:
-    script: python nsz.py -D -V --keep -w -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsp_from_block_out C:\Users\Azure\.switch\tests\nsz_block
-    failOnStderr: true
-  displayName: 'Test NSZ block decompression'
-  
-- task: CmdLine@2
-  inputs:
-    script: python nsz.py -C -V --keep -w -p -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsz_solid_out C:\Users\Azure\.switch\tests\nsp
-    failOnStderr: true
-  displayName: 'Test NSP solid compression'
-  
-- task: CmdLine@2
-  inputs:
-    script: python nsz.py -C -B -V --keep -w -p -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsz_block_out C:\Users\Azure\.switch\tests\nsp
-    failOnStderr: true
-  displayName: 'Test NSP block compression'
+          - script: |
+              python -m pip install --upgrade pip
+              python -m pip install -r requirements-dev.txt
+            displayName: 'Install dev dependencies'
+
+          - script: |
+              python -m pytest tests/ -v
+            displayName: 'Run pytest'
+
+  - stage: upstream_e2e
+    displayName: "Upstream ROM E2E (需 self-hosted runner)"
+    dependsOn: unit_tests
+    # 默认不跑 —— 普通 fork 没有 self-hosted Windows agent + ROM 样本。
+    # 启用方法：把变量 RUN_UPSTREAM_E2E 设为 'true'，并配好 default agent pool。
+    condition: eq(variables['RUN_UPSTREAM_E2E'], 'true')
+    jobs:
+      - job: upstream_rom_tests
+        pool:
+          name: default
+        strategy:
+          maxParallel: 4
+          matrix:
+            Python360:
+              python.version: '3.6.0'
+            Python368:
+              python.version: '3.6.8'
+            Python376:
+              python.version: '3.7.6'
+            Python383:
+              python.version: '3.8.3'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(python.version)'
+            displayName: 'Use Python $(python.version)'
+
+          - script: |
+              python -m pip install --upgrade pip
+              python -m pip install -r requirements.txt
+            displayName: 'Install dependencies'
+
+          - task: CmdLine@2
+            inputs:
+              script: python nsz.py -D -V --keep -w -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsp_from_solid_out C:\Users\Azure\.switch\tests\nsz_solid
+              failOnStderr: true
+            displayName: 'Test NSZ solid decompression'
+
+          - task: CmdLine@2
+            inputs:
+              script: python nsz.py -D -V --keep -w -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsp_from_block_out C:\Users\Azure\.switch\tests\nsz_block
+              failOnStderr: true
+            displayName: 'Test NSZ block decompression'
+
+          - task: CmdLine@2
+            inputs:
+              script: python nsz.py -C -V --keep -w -p -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsz_solid_out C:\Users\Azure\.switch\tests\nsp
+              failOnStderr: true
+            displayName: 'Test NSP solid compression'
+
+          - task: CmdLine@2
+            inputs:
+              script: python nsz.py -C -B -V --keep -w -p -m 4 -t 4 -o C:\Users\Azure\.switch\tests\nsz_block_out C:\Users\Azure\.switch\tests\nsp
+              failOnStderr: true
+            displayName: 'Test NSP block compression'

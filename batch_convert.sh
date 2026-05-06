@@ -61,35 +61,58 @@ echo "============================================================"
 
 SUCCESS_COUNT=0
 FAILED_COUNT=0
+SUSPICIOUS_COUNT=0
 FAILED_FILES=()
+SUSPICIOUS_FILES=()
+
+# nsz.py 转换日志里的硬伤关键字：命中任意一个就说明 NSP 极大概率装不上 Ryujinx
+SUSPICIOUS_PATTERN='\[CORRUPTED\]|\[MISMATCH\]|\[MISSMATCH\]|missing from|crc32 missmatch|Failed to load default keys'
+
+# 单独存一份转换日志方便事后排查
+LOG_DIR="$SCRIPT_DIR/output/_logs"
+mkdir -p "$LOG_DIR"
 
 for i in "${!NSZ_FILES[@]}"; do
     NSZ_FILE="${NSZ_FILES[$i]}"
     RELATIVE_PATH="${NSZ_FILE#$INPUT_DIR/}"
-    
+
     echo ""
     echo "[$((i+1))/${#NSZ_FILES[@]}] 正在转换: $RELATIVE_PATH"
-    
+
     # 获取文件夹路径（保持目录结构）
     RELATIVE_DIR=$(dirname "$RELATIVE_PATH")
     TARGET_OUTPUT_DIR="$OUTPUT_DIR/$RELATIVE_DIR"
-    
+
     # 创建目标目录（如果不存在）
     mkdir -p "$TARGET_OUTPUT_DIR"
     echo "  输出到: $TARGET_OUTPUT_DIR"
-    
+
     # 执行转换命令（使用虚拟环境）
     if [ -f "$SCRIPT_DIR/venv/bin/python" ]; then
         PYTHON_CMD="$SCRIPT_DIR/venv/bin/python"
     else
         PYTHON_CMD="python3"
     fi
-    
-    if "$PYTHON_CMD" "$SCRIPT_DIR/nsz.py" -D -o "$TARGET_OUTPUT_DIR" "$NSZ_FILE" >/dev/null 2>&1; then
-        echo "  ✓ 转换成功"
-        ((SUCCESS_COUNT++))
+
+    # 默认带 --fix-padding 与 --quick-verify：
+    # 前者修齐 PFS0 padding 让 Ryujinx 能稳定挂载，后者验证 NCA hash
+    LOG_FILE="$LOG_DIR/$(echo "$RELATIVE_PATH" | tr '/ ' '__').log"
+    if "$PYTHON_CMD" "$SCRIPT_DIR/nsz.py" -D --fix-padding --quick-verify \
+        -o "$TARGET_OUTPUT_DIR" "$NSZ_FILE" >"$LOG_FILE" 2>&1; then
+        if grep -E -q "$SUSPICIOUS_PATTERN" "$LOG_FILE"; then
+            echo "  ⚠ 转换看似成功但日志有可疑信号（hash mismatch / 缺 key），不要直接拷进 Ryujinx"
+            grep -E "$SUSPICIOUS_PATTERN" "$LOG_FILE" | sed 's/^/      /'
+            echo "    完整日志: $LOG_FILE"
+            ((SUSPICIOUS_COUNT++))
+            SUSPICIOUS_FILES+=("$RELATIVE_PATH")
+        else
+            echo "  ✓ 转换成功"
+            ((SUCCESS_COUNT++))
+        fi
     else
-        echo "  ✗ 转换失败"
+        echo "  ✗ 转换失败，nsz.py 输出如下:"
+        sed 's/^/      /' "$LOG_FILE"
+        echo "    完整日志: $LOG_FILE"
         ((FAILED_COUNT++))
         FAILED_FILES+=("$RELATIVE_PATH")
     fi
@@ -109,6 +132,16 @@ if [ ${#FAILED_FILES[@]} -gt 0 ]; then
     done
 fi
 
+if [ ${#SUSPICIOUS_FILES[@]} -gt 0 ]; then
+    echo ""
+    echo "⚠ 可疑产物（退出码 0 但日志有 corrupted/missing key 等告警）: $SUSPICIOUS_COUNT 个"
+    echo "  这些 NSP 很可能装到 Ryujinx 也跑不起来，请先排查 prod.keys / title.keys 或换源:"
+    for SF in "${SUSPICIOUS_FILES[@]}"; do
+        echo "  - $SF"
+    done
+fi
+
 echo ""
 echo "转换后的NSP文件已保存到: $OUTPUT_DIR"
+echo "单文件日志位于: $LOG_DIR"
 echo "============================================================"

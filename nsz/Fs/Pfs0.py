@@ -92,7 +92,8 @@ class Pfs0Stream(BaseFile):
 		pass
 
 	def getFirstFileOffset(self):
-		return self.files[0].offset
+		# Pfs0Stream 写流里 self.files 是 dict 列表，不是 partition 对象，故必须用键访问。
+		return self.files[0]['offset']
 
 	def getHeader(self):
 		stringTableNonPadded = '\x00'.join(file['name'] for file in self.files)+'\x00'

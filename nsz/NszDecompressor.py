@@ -119,7 +119,10 @@ def __getDecompressedNczSize(nspf):
 		fakeSection = Header.FakeSection(UNCOMPRESSABLE_HEADER_SIZE, sections[0].offset-UNCOMPRESSABLE_HEADER_SIZE)
 		sections.insert(0, fakeSection)
 	nca_size = UNCOMPRESSABLE_HEADER_SIZE
-	for i in range(sectionCount):
+	# 必须遍历 len(sections)：当 FakeSection 被插入时 sections 长度比 sectionCount 多 1，
+	# 用 range(sectionCount) 会漏掉最后一段 real section，导致 PFS0 header 里登记的
+	# NCA size 比真实数据短，Ryujinx 校验 NCA hash 必失败。
+	for i in range(len(sections)):
 		nca_size += sections[i].size
 	return nca_size
 
@@ -141,7 +144,8 @@ def __decompressNcz(nspf, f, statusReportInfo, pleaseNoPrint):
 		fakeSection = Header.FakeSection(UNCOMPRESSABLE_HEADER_SIZE, sections[0].offset-UNCOMPRESSABLE_HEADER_SIZE)
 		sections.insert(0, fakeSection)
 	nca_size = UNCOMPRESSABLE_HEADER_SIZE
-	for i in range(sectionCount):
+	# 同 __getDecompressedNczSize 注释，必须用 len(sections) 否则插入 FakeSection 时漏算最后一段。
+	for i in range(len(sections)):
 		nca_size += sections[i].size
 	pos = nspf.tell()
 	blockMagic = nspf.read(8)
